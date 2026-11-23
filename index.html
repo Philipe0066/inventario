@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Inventario Leblon - Contagem & PDF</title>
+
+  <!-- Ícone 256x256 na raiz do GitHub -->
+  <link rel="icon" type="image/png" sizes="256x256" href="./ico.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="./ico.png">
+
+  <!-- Bibliotecas Externas (Scanner, Gerador de Barcode e PDF) -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- Firebase SDK (Compat para arquivo único HTML) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #121212;
+      --surface-2: #1e1e1e;
+      --border: #2c2c2c;
+      --primary: #00e676;
+      --primary-text: #000000;
+      --text: #ffffff;
+      --text-muted: #9e9e9e;
+      --danger: #ff5252;
+      --accent: #40c4ff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* --- TELA SPLASH --- */
+    #splashScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background-color: #f3f4f6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+    }
+
+    #splashScreen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    #splashScreen img {
+      width: 100%;
+      height: 100%;
+      max-width: 520px;
+      object-fit: cover;
+    }
+
+    .splash-loader {
+      position: absolute;
+      bottom: 36px;
+      width: 180px;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.12);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .splash-loader-bar {
+      width: 0%;
+      height: 100%;
+      background: #4caf50;
+      border-radius: 99px;
+      animation: splashProgress 2.2s ease-out forwards;
+    }
+
+    @keyframes splashProgress {
+      0% { width: 0%; }
+      100% { width: 100%; }
+    }
+
+    header {
+      background: var(--surface);
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header h1 { font-size: 1.05rem; font-weight: 700; }
+
+    .nav-btn {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .container {
+      padding: 16px;
+      max-width: 600px;
+      width: 100%;
+      margin: 0 auto;
+      flex: 1;
+    }
+
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+
+    input {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 1rem;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    input:focus { border-color: var(--primary); }
+
+    .btn {
+      width: 100%;
+      padding: 15px;
+      border-radius: 10px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary { background: var(--primary); color: var(--primary-text); }
+    .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); margin-bottom: 12px; }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 10px; font-size: 0.8rem; border-radius: 6px; width: auto; cursor: pointer; }
+    .btn-edit { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 7px 10px; font-size: 0.8rem; border-radius: 6px; cursor: pointer; }
+
+    #reader {
+      width: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    th, td {
+      padding: 12px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      vertical-align: top;
+    }
+
+    th { color: var(--text-muted); font-weight: 600; }
+
+    .item-desc {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .badge {
+      background: var(--surface-2);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      color: var(--primary);
+      border: 1px solid var(--border);
+    }
+
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .edit-item-row {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .edit-item-row input {
+      padding: 10px;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TELA SPLASH (Coloque a imagem na raiz do GitHub como splash.webp) -->
+  <div id="splashScreen">
+    <img src="./splash.webp" alt="Inventário Leroy Merlin">
+    <div class="splash-loader">
+      <div class="splash-loader-bar"></div>
+    </div>
+  </div>
+
+  <header>
+    <h1 id="headerTitle">Setor do PDF</h1>
+    <div>
+      <button class="nav-btn" onclick="showScreen('screenHistory')">Histórico</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- TELA 1: APENAS ESCREVER O SETOR -->
+    <div id="screenSector" class="screen active">
+      <div class="card">
+        <label for="sectorInput">Escreva o setor (será o cabeçalho do PDF):</label>
+        <input type="text" id="sectorInput" placeholder="Ex: Pintura - Corredor 08">
+
+        <button class="btn btn-primary" onclick="goToCountScreen()">Avançar →</button>
+      </div>
+    </div>
+
+    <!-- TELA 2: BIPAGEM / DIGITAÇÃO, DESCRIÇÃO OPCIONAL E QUANTIDADE -->
+    <div id="screenCount" class="screen">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+          <span class="badge" id="activeSectorBadge">Setor: -</span>
+          <button class="nav-btn" onclick="showScreen('screenSector')">Trocar Setor</button>
+        </div>
+
+        <button type="button" class="btn btn-secondary" id="btnToggleCamera" onclick="toggleScanner()">📷 Digitalizar Código de Barras</button>
+        <div id="reader"></div>
+
+        <label for="barcodeInput">Código de Barras (digite ou escaneie):</label>
+        <input type="text" id="barcodeInput" placeholder="Digite ou escaneie o código" inputmode="text">
+
+        <label for="descInput">Descrição do Produto (opcional):</label>
+        <input type="text" id="descInput" placeholder="Ex: Tinta Acrílica Fosca 18L">
+
+        <label for="qtyInput">Quantidade Contada:</label>
+        <input type="number" id="qtyInput" placeholder="Ex: 10" inputmode="numeric">
+
+        <button type="button" class="btn btn-primary" onclick="addItem()">+ Adicionar Item</button>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong>Itens na Contagem (<span id="itemCount">0</span>)</strong>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Código / Descrição</th>
+              <th>Qtd</th>
+              <th style="text-align:right;">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="itemsTableBody"></tbody>
+        </table>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="btnSavePdf" onclick="saveAndGeneratePDF()">💾 Salvar na Nuvem e Gerar PDF</button>
+    </div>
+
+    <!-- TELA 3: HISTÓRICO DE PDFs SALVOS -->
+    <div id="screenHistory" class="screen">
+      <div style="margin-bottom: 12px;">
+        <button class="nav-btn" onclick="showScreen('screenSector')">← Voltar</button>
+      </div>
+      <div id="historyList">
+        <p style="color: var(--text-muted); text-align:center; padding: 20px;">Carregando histórico...</p>
+      </div>
+    </div>
+
+    <!-- TELA 4: EDITAR REGISTRO DO HISTÓRICO -->
+    <div id="screenEdit" class="screen">
+      <div style="margin-bottom: 12px;">
+        <button class="nav-btn" onclick="showScreen('screenHistory')">← Cancelar e Voltar</button>
+      </div>
+
+      <div class="card">
+        <label for="editSectorInput">Setor (Cabeçalho do PDF):</label>
+        <input type="text" id="editSectorInput">
+
+        <label for="editDateTimeInput">Conferido (Dia e Hora):</label>
+        <input type="text" id="editDateTimeInput">
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <strong>Itens do Registro</strong>
+          <button type="button" class="nav-btn" onclick="addEditItemRow()">+ Novo Item</button>
+        </div>
+        <div id="editItemsContainer"></div>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="btnSaveEdit" onclick="saveEditedRecord()">💾 Salvar Alterações e Baixar PDF</button>
+    </div>
+  </div>
+
+  <!-- Canvas oculto para gerar imagens dos códigos de barras no PDF -->
+  <canvas id="barcodeCanvas" style="display:none;"></canvas>
+
+  <script>
+    // --- MANIFEST DINÂMICO PARA PWA (USA ico.png 256x256 DA RAIZ) ---
+    (function setupManifest() {
+      const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+      const manifest = {
+        name: "Inventario Leblon",
+        short_name: "Inventario",
+        start_url: baseUrl + "index.html",
+        display: "standalone",
+        background_color: "#000000",
+        theme_color: "#000000",
+        icons: [
+          {
+            src: baseUrl + "ico.png",
+            sizes: "256x256",
+            type: "image/png"
+          }
+        ]
+      };
+      const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = URL.createObjectURL(blob);
+      document.head.appendChild(link);
+    })();
+
+    // --- CONTROLE DA TELA SPLASH ---
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const splash = document.getElementById('splashScreen');
+        if (splash) splash.classList.add('hidden');
+      }, 2400);
+    });
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyC0UGiSxuAgjjQaSh8TmST8-A5aMmQqdaY",
+      authDomain: "leroy-app.firebaseapp.com",
+      databaseURL: "https://leroy-app-default-rtdb.firebaseio.com",
+      projectId: "leroy-app",
+      storageBucket: "leroy-app.firebasestorage.app",
+      messagingSenderId: "535866300891",
+      appId: "1:535866300891:web:b8444f7a2acedca8b62ffe"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const ROOT_NODE = "Inventario Leblon";
+
+    let currentSector = "";
+    let countedItems = [];
+    let historyCache = [];
+    let editingRecordKey = null;
+    let editingTimestamp = null;
+    let html5QrCode = null;
+    let isScanning = false;
+
+    function showScreen(screenId) {
+      if (isScanning) stopScanner();
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(screenId).classList.add('active');
+
+      const titles = {
+        screenSector: "Setor do PDF",
+        screenCount: "Contagem & Código de Barras",
+        screenHistory: "Histórico de PDFs",
+        screenEdit: "Editar Registro"
+      };
+      document.getElementById('headerTitle').innerText = titles[screenId] || "Inventario Leblon";
+
+      if (screenId === 'screenHistory') loadHistory();
+    }
+
+    function goToCountScreen() {
+      const val = document.getElementById('sectorInput').value.trim();
+      if (!val) {
+        alert("Escreva o nome do setor para ser o cabeçalho do PDF.");
+        document.getElementById('sectorInput').focus();
+        return;
+      }
+      currentSector = val;
+      document.getElementById('activeSectorBadge').innerText = "Setor: " + currentSector;
+      showScreen('screenCount');
+    }
+
+    // --- LEITOR DE CÓDIGO DE BARRAS ---
+    function toggleScanner() {
+      if (isScanning) {
+        stopScanner();
+      } else {
+        startScanner();
+      }
+    }
+
+    function startScanner() {
+      const readerDiv = document.getElementById('reader');
+      readerDiv.style.display = 'block';
+      document.getElementById('btnToggleCamera').innerText = "✖ Fechar Câmera";
+
+      html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 120 } },
+        (decodedText) => {
+          document.getElementById('barcodeInput').value = decodedText;
+          stopScanner();
+          document.getElementById('descInput').focus();
+        },
+        () => {}
+      ).then(() => {
+        isScanning = true;
+      }).catch(err => {
+        alert("Não foi possível abrir a câmera: " + err);
+        readerDiv.style.display = 'none';
+        document.getElementById('btnToggleCamera').innerText = "📷 Digitalizar Código de Barras";
+      });
+    }
+
+    function stopScanner() {
+      if (html5QrCode && isScanning) {
+        html5QrCode.stop().then(() => {
+          document.getElementById('reader').style.display = 'none';
+          document.getElementById('btnToggleCamera').innerText = "📷 Digitalizar Código de Barras";
+          isScanning = false;
+        }).catch(() => {});
+      }
+    }
+
+    // --- LISTA DE ITENS ---
+    function addItem() {
+      const code = document.getElementById('barcodeInput').value.trim();
+      const desc = document.getElementById('descInput').value.trim();
+      const qty = parseInt(document.getElementById('qtyInput').value, 10);
+
+      if (!code || isNaN(qty) || qty <= 0) {
+        alert("Digite/escaneie um código de barras e informe uma quantidade válida.");
+        return;
+      }
+
+      countedItems.push({ code, desc, qty });
+      document.getElementById('barcodeInput').value = "";
+      document.getElementById('descInput').value = "";
+      document.getElementById('qtyInput').value = "";
+      document.getElementById('barcodeInput').focus();
+      renderTable();
+    }
+
+    function removeItem(index) {
+      countedItems.splice(index, 1);
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('itemsTableBody');
+      tbody.innerHTML = "";
+      document.getElementById('itemCount').innerText = countedItems.length;
+
+      countedItems.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+        const descHtml = item.desc ? `<span class="item-desc">${escapeHtml(item.desc)}</span>` : "";
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(item.code)}</strong>${descHtml}</td>
+          <td>${item.qty}</td>
+          <td style="text-align:right;">
+            <button class="btn-danger" onclick="removeItem(${idx})">Excluir</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // --- GERAR IMAGEM DO CÓDIGO DE BARRAS PARA O PDF ---
+    function generateBarcodeDataURL(text) {
+      const canvas = document.getElementById('barcodeCanvas');
+      try {
+        JsBarcode(canvas, String(text), {
+          format: "CODE128",
+          width: 2,
+          height: 45,
+          displayValue: true,
+          fontSize: 12,
+          margin: 4
+        });
+        return canvas.toDataURL("image/png");
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // --- SALVAR NO FIREBASE REALTIME DATABASE E GERAR PDF ---
+    async function saveAndGeneratePDF() {
+      if (countedItems.length === 0) {
+        alert("Adicione pelo menos um item antes de salvar.");
+        return;
+      }
+
+      const btn = document.getElementById('btnSavePdf');
+      btn.disabled = true;
+      btn.innerText = "Salvando...";
+
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('pt-BR');
+      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const fullDateTime = `${dateStr} às ${timeStr}`;
+
+      const record = {
+        sector: currentSector,
+        dateTime: fullDateTime,
+        timestamp: now.getTime(),
+        items: countedItems
+      };
+
+      try {
+        await db.ref(ROOT_NODE).push(record);
+        createPDFDocument(record);
+
+        countedItems = [];
+        renderTable();
+        alert("Salvo em 'Inventario Leblon' e PDF gerado com sucesso!");
+      } catch (e) {
+        alert("Erro ao salvar no Firebase: " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "💾 Salvar na Nuvem e Gerar PDF";
+      }
+    }
+
+    function createPDFDocument(record) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text(`SETOR: ${String(record.sector || "").toUpperCase()}`, 14, 18);
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Conferido: ${record.dateTime}`, 14, 24);
+
+      const items = record.items || [];
+      const barcodeImages = items.map(item => generateBarcodeDataURL(item.code));
+
+      const tableRows = items.map(item => {
+        const descLine = item.desc ? `\nDescrição: ${item.desc}` : "";
+        return [
+          `Código: ${item.code}${descLine}\nQuantidade Contada: ${item.qty}`,
+          ""
+        ];
+      });
+
+      doc.autoTable({
+        startY: 30,
+        head: [['Descrição / Quantidade:', 'Código de barras:']],
+        body: tableRows,
+        theme: 'grid',
+        styles: {
+          minCellHeight: 24,
+          valign: 'middle',
+          lineColor: [0, 0, 0],
+          lineWidth: 0.3,
+          textColor: [0, 0, 0]
+        },
+        headStyles: {
+          fillColor: [255, 255, 255],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+          lineColor: [0, 0, 0],
+          lineWidth: 0.3
+        },
+        columnStyles: {
+          0: { cellWidth: 100 },
+          1: { cellWidth: 82, halign: 'center' }
+        },
+        didDrawCell: function(data) {
+          if (data.section === 'body' && data.column.index === 1) {
+            const img = barcodeImages[data.row.index];
+            if (img) {
+              const imgWidth = 55;
+              const imgHeight = 18;
+              const x = data.cell.x + (data.cell.width - imgWidth) / 2;
+              const y = data.cell.y + (data.cell.height - imgHeight) / 2;
+              doc.addImage(img, 'PNG', x, y, imgWidth, imgHeight);
+            }
+          }
+        }
+      });
+
+      const safeSector = String(record.sector || "Setor").replace(/[^a-zA-Z0-9_-]+/g, '_');
+      doc.save(`Inventario_Leblon_${safeSector}.pdf`);
+    }
+
+    // --- CARREGAR HISTÓRICO DO NÓ 'Inventario Leblon' ---
+    function loadHistory() {
+      const container = document.getElementById('historyList');
+      container.innerHTML = '<p style="color: var(--text-muted); text-align:center;">Carregando histórico...</p>';
+
+      db.ref(ROOT_NODE).orderByChild('timestamp').once('value', snapshot => {
+        const list = [];
+        snapshot.forEach(child => {
+          list.unshift({
+            key: child.key,
+            ...child.val()
+          });
+        });
+        historyCache = list;
+        renderHistoryList(list);
+      }, err => {
+        container.innerHTML = `<p style="color: var(--danger); text-align:center;">Erro ao carregar: ${err.message}</p>`;
+      });
+    }
+
+    function renderHistoryList(list) {
+      const container = document.getElementById('historyList');
+      if (list.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); text-align:center; padding:20px;">Nenhum PDF salvo em Inventario Leblon ainda.</p>';
+        return;
+      }
+
+      container.innerHTML = "";
+      list.forEach((rec, index) => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        const countItems = rec.items ? rec.items.length : 0;
+        div.innerHTML = `
+          <div>
+            <strong style="display:block; margin-bottom:4px;">${escapeHtml(rec.sector)}</strong>
+            <span style="font-size:0.8rem; color:var(--text-muted);">Conferido: ${escapeHtml(rec.dateTime)} • ${countItems} itens</span>
+          </div>
+          <div class="history-actions">
+            <button class="btn-edit" onclick="openEditRecord(${index})">Editar</button>
+            <button class="nav-btn" onclick="downloadHistoryIndex(${index})">PDF</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function downloadHistoryIndex(index) {
+      const rec = historyCache[index];
+      if (rec) createPDFDocument(rec);
+    }
+
+    // --- EDITAR REGISTRO ---
+    function openEditRecord(index) {
+      const rec = historyCache[index];
+      if (!rec) return;
+
+      editingRecordKey = rec.key;
+      editingTimestamp = rec.timestamp || Date.now();
+
+      document.getElementById('editSectorInput').value = rec.sector || "";
+      document.getElementById('editDateTimeInput').value = rec.dateTime || "";
+
+      const container = document.getElementById('editItemsContainer');
+      container.innerHTML = "";
+
+      const items = rec.items && rec.items.length > 0 ? rec.items : [{ code: "", desc: "", qty: 1 }];
+      items.forEach(item => addEditItemRow(item));
+
+      showScreen('screenEdit');
+    }
+
+    function addEditItemRow(item = { code: "", desc: "", qty: 1 }) {
+      const container = document.getElementById('editItemsContainer');
+      const div = document.createElement('div');
+      div.className = 'edit-item-row';
+      div.innerHTML = `
+        <label>Código de Barras:</label>
+        <input type="text" class="edit-code" value="${escapeHtml(item.code)}" placeholder="Código de barras">
+        <label>Descrição (opcional):</label>
+        <input type="text" class="edit-desc" value="${escapeHtml(item.desc || "")}" placeholder="Descrição do produto">
+        <label>Quantidade:</label>
+        <input type="number" class="edit-qty" value="${item.qty}" placeholder="Quantidade">
+        <div style="text-align:right;">
+          <button type="button" class="btn-danger" onclick="this.closest('.edit-item-row').remove()">Remover Item</button>
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    async function saveEditedRecord() {
+      if (!editingRecordKey) return;
+
+      const sector = document.getElementById('editSectorInput').value.trim();
+      const dateTime = document.getElementById('editDateTimeInput').value.trim();
+
+      if (!sector) {
+        alert("Informe o setor para o cabeçalho do PDF.");
+        return;
+      }
+
+      const rows = document.querySelectorAll('#editItemsContainer .edit-item-row');
+      const updatedItems = [];
+
+      for (const row of rows) {
+        const code = row.querySelector('.edit-code').value.trim();
+        const desc = row.querySelector('.edit-desc').value.trim();
+        const qty = parseInt(row.querySelector('.edit-qty').value, 10);
+
+        if (!code || isNaN(qty) || qty <= 0) {
+          alert("Verifique todos os itens: código de barras e quantidade maior que zero são obrigatórios.");
+          return;
+        }
+
+        updatedItems.push({ code, desc, qty });
+      }
+
+      if (updatedItems.length === 0) {
+        alert("Mantenha pelo menos um item no registro.");
+        return;
+      }
+
+      const btn = document.getElementById('btnSaveEdit');
+      btn.disabled = true;
+      btn.innerText = "Salvando alterações...";
+
+      const updatedRecord = {
+        sector,
+        dateTime: dateTime || new Date().toLocaleString('pt-BR'),
+        timestamp: editingTimestamp,
+        items: updatedItems
+      };
+
+      try {
+        await db.ref(`${ROOT_NODE}/${editingRecordKey}`).set(updatedRecord);
+        createPDFDocument(updatedRecord);
+        alert("Registro atualizado em 'Inventario Leblon' e PDF gerado!");
+        showScreen('screenHistory');
+      } catch (e) {
+        alert("Erro ao atualizar no Firebase: " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "💾 Salvar Alterações e Baixar PDF";
+      }
+    }
+  </script>
+</body>
+</html>
