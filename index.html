@@ -6,11 +6,13 @@
   <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Inventario">
   <title>Inventario Leblon - Contagem & PDF</title>
 
-  <!-- Ícone 256x256 na raiz do GitHub -->
-  <link rel="icon" type="image/png" sizes="256x256" href="./ico.png">
-  <link rel="apple-touch-icon" sizes="256x256" href="./ico.png">
+  <!-- PWA Manifest e Ícones -->
+  <link rel="manifest" href="/inventario/manifest.json">
+  <link rel="icon" type="image/png" sizes="256x256" href="/inventario/ico.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="/inventario/ico.png">
 
   <!-- Bibliotecas Externas (Scanner, Gerador de Barcode e PDF) -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
@@ -105,9 +107,16 @@
       position: sticky;
       top: 0;
       z-index: 10;
+      gap: 8px;
     }
 
     header h1 { font-size: 1.05rem; font-weight: 700; }
+
+    .header-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
 
     .nav-btn {
       background: var(--surface-2);
@@ -117,6 +126,18 @@
       border-radius: 8px;
       font-size: 0.85rem;
       cursor: pointer;
+    }
+
+    .install-btn {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--primary);
+      border: 1px solid var(--primary);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
     }
 
     .container {
@@ -247,9 +268,9 @@
 </head>
 <body>
 
-  <!-- TELA SPLASH (Coloque a imagem na raiz do GitHub como splash.webp) -->
+  <!-- TELA SPLASH -->
   <div id="splashScreen">
-    <img src="./splash.webp" alt="Inventário Leroy Merlin">
+    <img src="/inventario/splash.webp" alt="Inventário Leroy Merlin">
     <div class="splash-loader">
       <div class="splash-loader-bar"></div>
     </div>
@@ -257,7 +278,8 @@
 
   <header>
     <h1 id="headerTitle">Setor do PDF</h1>
-    <div>
+    <div class="header-actions">
+      <button class="install-btn" id="btnInstallPwa">📲 Instalar</button>
       <button class="nav-btn" onclick="showScreen('screenHistory')">Histórico</button>
     </div>
   </header>
@@ -355,30 +377,35 @@
   <canvas id="barcodeCanvas" style="display:none;"></canvas>
 
   <script>
-    // --- MANIFEST DINÂMICO PARA PWA (USA ico.png 256x256 DA RAIZ) ---
-    (function setupManifest() {
-      const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
-      const manifest = {
-        name: "Inventario Leblon",
-        short_name: "Inventario",
-        start_url: baseUrl + "index.html",
-        display: "standalone",
-        background_color: "#000000",
-        theme_color: "#000000",
-        icons: [
-          {
-            src: baseUrl + "ico.png",
-            sizes: "256x256",
-            type: "image/png"
-          }
-        ]
-      };
-      const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-      const link = document.createElement('link');
-      link.rel = 'manifest';
-      link.href = URL.createObjectURL(blob);
-      document.head.appendChild(link);
-    })();
+    // --- REGISTRO DO SERVICE WORKER PARA PWA ---
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/inventario/sw.js', { scope: '/inventario/' })
+          .catch(err => console.warn('Erro ao registrar SW:', err));
+      });
+    }
+
+    // --- BOTÃO INSTALAR PWA ---
+    let deferredPrompt = null;
+    const btnInstallPwa = document.getElementById('btnInstallPwa');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      btnInstallPwa.style.display = 'inline-block';
+    });
+
+    btnInstallPwa.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      btnInstallPwa.style.display = 'none';
+    });
+
+    window.addEventListener('appinstalled', () => {
+      btnInstallPwa.style.display = 'none';
+    });
 
     // --- CONTROLE DA TELA SPLASH ---
     window.addEventListener('load', () => {
